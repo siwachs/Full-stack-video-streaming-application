@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { exec } from "child_process"; // Do not directly run this on Server
 
 import express from "express";
 import cors from "cors";
@@ -9,8 +10,12 @@ import { v4 as uuidv4 } from "uuid";
 const app = express();
 const port = process.env.PORT ?? 8000;
 
+function ensureDirectoryExists(dir) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
 const uploadDir = "./uploads";
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+ensureDirectoryExists(uploadDir);
 
 app.use(
   cors({
@@ -36,7 +41,10 @@ const upload = multer({
 
 // Middleware for whitelist content types (For Video Streaming)
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "http://localhost:3000"); // Allow only known origin
+  res.header(
+    "Access-Control-Allow-Origin",
+    "http://localhost:3000, http://localhost:5173"
+  ); // Allow only known origin
   res.header(
     "Access-Control-Allow-Headers",
     "Origin, X-Requested-With, Content-Type, Accept"
@@ -53,6 +61,7 @@ app.get("/", (req, res) => {
   res.json({ message: "API is Live", status: 200 });
 });
 
+// In realworld the file store on S3 or Drive and then it send to queue for output
 app.post("/upload", upload.single("file"), (req, res) => {
   try {
     if (!req.file)
@@ -60,7 +69,34 @@ app.post("/upload", upload.single("file"), (req, res) => {
         message: "No file selected",
       });
 
-    return res.status(200).json({ message: "File Uploaded", file: req.file });
+    const videoId = uuidv4();
+    const videoPath = req.file.path;
+    const outputPath = `${uploadDir}/videos/${videoId}`;
+
+    const hlsPath = `${outputPath}/index.m3u8`;
+    console.log(`"HLS Path: ${hlsPath}`);
+
+    ensureDirectoryExists(outputPath);
+
+    // ffmpeg processing
+    const ffmpegCommand = `ffmpeg -i ${videoPath} -codec:v libx264 -codec:a aac -hls_time 10 -hls_playlist_type vod -hls_segment_filename "${outputPath}/segment%03d.ts" -start_number 0 ${hlsPath}`;
+
+    // no queue based implementation (In production must run in background on machine clusters)
+    exec(ffmpegCommand, (error, stdout, stderr) => {
+      if (error) {
+        console.log(`Exec Error: ${error.message}`);
+        return res.status(500).json({ message: "Exec Error" });
+      }
+
+      console.log(`stdout: ${stdout}`);
+      console.log(`stderr: ${stderr}`);
+
+      const videoUrl = `http://localhost:${port}/uploads/videos/${videoId}/index.m3u8`;
+
+      res
+        .status(200)
+        .json({ message: "Video converted to HLS", videoUrl, videoId });
+    });
   } catch (error) {
     res.status(500).json({
       message: error.message,

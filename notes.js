@@ -14,3 +14,7 @@
 // We have (frames or segments) for each videos
 
 // HTTP Live Streaming (HSL) AKS adaptive bitrate video delivery ...
+
+// m3u8 -> It is a UTF-8 encoded playlist file. It is not video file it is index file. They are plain text files used to store the URL paths of straming audio or video and information about the media track. (ie timestamps)
+
+// codecs (short for compressor-decompressor) are algorithms or software used to compress and decompress video files. They play a crucial role in reducing the file size of videos while maintaining as much quality as possible, and enabling efficient storage, transmission, and playback.
